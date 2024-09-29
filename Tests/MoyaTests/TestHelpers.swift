@@ -14,7 +14,7 @@ enum GitHub {
 }
 
 extension GitHub: TargetType {
-    var baseURL: URL { return URL(string: "https://api.github.com")! }
+    var baseURL: URL { URL(string: "https://api.github.com")! }
     var path: String {
         switch self {
         case .zen:
@@ -24,13 +24,9 @@ extension GitHub: TargetType {
         }
     }
 
-    var method: Moya.Method {
-        return .get
-    }
+    var method: Moya.Method { .get }
 
-    var task: Task {
-        return .requestPlain
-    }
+    var task: Task { .requestPlain }
 
     var sampleData: Data {
         switch self {
@@ -41,13 +37,9 @@ extension GitHub: TargetType {
         }
     }
 
-    var validationType: ValidationType {
-        return .successAndRedirectCodes
-    }
+    var validationType: ValidationType { .successAndRedirectCodes }
 
-    var headers: [String: String]? {
-        return nil
-    }
+    var headers: [String: String]? { nil }
 }
 
 extension GitHub: Equatable {
@@ -61,7 +53,7 @@ extension GitHub: Equatable {
 }
 
 func url(_ route: TargetType) -> String {
-    return route.baseURL.appendingPathComponent(route.path).absoluteString
+    route.baseURL.appendingPathComponent(route.path).absoluteString
 }
 
 let failureEndpointClosure = { (target: GitHub) -> Endpoint in
@@ -74,17 +66,19 @@ enum HTTPBin: TargetType, AccessTokenAuthorizable {
     case bearer
     case post
     case upload(file: URL)
-    case uploadMultipart([MultipartFormData], [String: Any]?)
-    case validatedUploadMultipart([MultipartFormData], [String: Any]?, [Int])
+    case uploadMultipartFormData(MultipartFormData, [String: Any]?)
+    case uploadMultipartBodyParts([MultipartFormBodyPart], [String: Any]?)
+    case validatedUploadMultipartFormData(MultipartFormData, [String: Any]?, [Int])
+    case validatedUploadMultipartBodyParts([MultipartFormBodyPart], [String: Any]?, [Int])
 
-    var baseURL: URL { return URL(string: "http://httpbin.org")! }
+    var baseURL: URL { URL(string: "http://httpbin.org")! }
     var path: String {
         switch self {
         case .basicAuth:
             return "/basic-auth/user/passwd"
         case .bearer:
             return "/bearer"
-        case .post, .upload, .uploadMultipart, .validatedUploadMultipart:
+            case .post, .upload, .uploadMultipartBodyParts, .uploadMultipartFormData, .validatedUploadMultipartBodyParts, .validatedUploadMultipartFormData:
             return "/post"
         }
     }
@@ -93,7 +87,7 @@ enum HTTPBin: TargetType, AccessTokenAuthorizable {
         switch self {
         case .basicAuth, .bearer:
             return .get
-        case .post, .upload, .uploadMultipart, .validatedUploadMultipart:
+        case .post, .upload, .uploadMultipartBodyParts, .uploadMultipartFormData, .validatedUploadMultipartBodyParts, .validatedUploadMultipartFormData:
             return .post
         }
     }
@@ -104,11 +98,17 @@ enum HTTPBin: TargetType, AccessTokenAuthorizable {
             return .requestParameters(parameters: [:], encoding: URLEncoding.default)
         case .upload(let fileURL):
             return .uploadFile(fileURL)
-        case .uploadMultipart(let data, let urlParameters), .validatedUploadMultipart(let data, let urlParameters, _):
+        case .uploadMultipartFormData(let data, let urlParameters), .validatedUploadMultipartFormData(let data, let urlParameters, _):
             if let urlParameters = urlParameters {
-                return .uploadCompositeMultipart(data, urlParameters: urlParameters)
+                return .uploadCompositeMultipartFormData(data, urlParameters: urlParameters)
             } else {
-                return .uploadMultipart(data)
+                return .uploadMultipartFormData(data)
+            }
+        case .uploadMultipartBodyParts(let bodyParts, let urlParameters), .validatedUploadMultipartBodyParts(let bodyParts, let urlParameters, _):
+            if let urlParameters = urlParameters {
+                return .uploadCompositeMultipart(bodyParts, urlParameters: urlParameters)
+            } else {
+                return .uploadMultipart(bodyParts)
             }
         }
     }
@@ -119,18 +119,16 @@ enum HTTPBin: TargetType, AccessTokenAuthorizable {
             return "{\"authenticated\": true, \"user\": \"user\"}".data(using: String.Encoding.utf8)!
         case .bearer:
             return "{\"authenticated\": true, \"token\": \"4D4A9C7D-F6E7-4FD7-BDBD-03880550A80D\"}".data(using: String.Encoding.utf8)!
-        case .post, .upload, .uploadMultipart, .validatedUploadMultipart:
+        case .post, .upload, .uploadMultipartBodyParts, .uploadMultipartFormData, .validatedUploadMultipartBodyParts, .validatedUploadMultipartFormData:
             return "{\"args\": {}, \"data\": \"\", \"files\": {}, \"form\": {}, \"headers\": { \"Connection\": \"close\", \"Content-Length\": \"0\", \"Host\": \"httpbin.org\" },  \"json\": null, \"origin\": \"198.168.1.1\", \"url\": \"https://httpbin.org/post\"}".data(using: String.Encoding.utf8)!
         }
     }
 
-    var headers: [String: String]? {
-        return nil
-    }
+    var headers: [String: String]? { nil }
 
     var validationType: ValidationType {
         switch self {
-        case .validatedUploadMultipart(_, _, let codes):
+        case .validatedUploadMultipartFormData(_, _, let codes), .validatedUploadMultipartBodyParts(_, _, let codes):
             return .customCodes(codes)
         default:
             return .none
@@ -153,7 +151,7 @@ public enum GitHubUserContent {
 }
 
 extension GitHubUserContent: TargetType {
-    public var baseURL: URL { return URL(string: "https://raw.githubusercontent.com")! }
+    public var baseURL: URL { URL(string: "https://raw.githubusercontent.com")! }
     public var path: String {
         switch self {
         case .downloadMoyaWebContent(let contentPath), .requestMoyaWebContent(let contentPath):
@@ -172,9 +170,7 @@ extension GitHubUserContent: TargetType {
             return nil
         }
     }
-    public var parameterEncoding: ParameterEncoding {
-        return URLEncoding.default
-    }
+    public var parameterEncoding: ParameterEncoding { URLEncoding.default }
     public var task: Task {
         switch self {
         case .downloadMoyaWebContent:
@@ -190,23 +186,21 @@ extension GitHubUserContent: TargetType {
         }
     }
 
-    public var headers: [String: String]? {
-        return nil
-    }
+    public var headers: [String: String]? { nil }
 }
 
 // MARK: - Upload Multipart Helpers
 
 extension HTTPBin {
-    static func createTestMultipartFormData() -> [MultipartFormData] {
+    static func createTestMultipartFormData() -> [MultipartFormBodyPart] {
         let url = testImageUrl
         let string = "some data"
         guard let data = string.data(using: .utf8) else {
             fatalError("Failed creating Data from String \(string)")
         }
         return [
-            MultipartFormData(provider: .file(url), name: "file", fileName: "testImage"),
-            MultipartFormData(provider: .data(data), name: "data")
+            MultipartFormBodyPart(provider: .file(url), name: "file", fileName: "testImage"),
+            MultipartFormBodyPart(provider: .data(data), name: "data")
         ]
     }
 }
@@ -214,7 +208,7 @@ extension HTTPBin {
 // MARK: - String Helpers
 extension String {
     var urlEscaped: String {
-        return self.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed)!
+        self.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed)!
     }
 }
 
@@ -222,7 +216,7 @@ extension String {
 // https://lists.swift.org/pipermail/swift-users/Week-of-Mon-20160613/002280.html
 extension DispatchQueue {
     class var currentLabel: String? {
-        return String(validatingUTF8: __dispatch_queue_get_label(nil))
+        String(validatingUTF8: __dispatch_queue_get_label(nil))
     }
 }
 
@@ -250,12 +244,12 @@ extension ImageType {
     class TestClass { }
 
     static var testImage: ImageType {
-        return Image(data: testImageData)!
+        Image(data: testImageData)!
     }
 
     #if canImport(UIKit)
         func asJPEGRepresentation(_ compression: CGFloat) -> Data? {
-            return jpegData(compressionQuality: compression)
+            jpegData(compressionQuality: compression)
         }
     #elseif canImport(AppKit)
         func asJPEGRepresentation(_ compression: CGFloat) -> Data? {

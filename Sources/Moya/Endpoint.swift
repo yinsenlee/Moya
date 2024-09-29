@@ -50,12 +50,12 @@ open class Endpoint {
 
     /// Convenience method for creating a new `Endpoint` with the same properties as the receiver, but with added HTTP header fields.
     open func adding(newHTTPHeaderFields: [String: String]) -> Endpoint {
-        return Endpoint(url: url, sampleResponseClosure: sampleResponseClosure, method: method, task: task, httpHeaderFields: add(httpHeaderFields: newHTTPHeaderFields))
+        Endpoint(url: url, sampleResponseClosure: sampleResponseClosure, method: method, task: task, httpHeaderFields: add(httpHeaderFields: newHTTPHeaderFields))
     }
 
     /// Convenience method for creating a new `Endpoint` with the same properties as the receiver, but with replaced `task` parameter.
     open func replacing(task: Task) -> Endpoint {
-        return Endpoint(url: url, sampleResponseClosure: sampleResponseClosure, method: method, task: task, httpHeaderFields: httpHeaderFields)
+        Endpoint(url: url, sampleResponseClosure: sampleResponseClosure, method: method, task: task, httpHeaderFields: httpHeaderFields)
     }
 
     fileprivate func add(httpHeaderFields headers: [String: String]?) -> [String: String]? {
@@ -85,7 +85,7 @@ public extension Endpoint {
         request.allHTTPHeaderFields = httpHeaderFields
 
         switch task {
-        case .requestPlain, .uploadFile, .uploadMultipart, .downloadDestination:
+        case .requestPlain, .uploadFile, .uploadMultipart, .uploadMultipartFormData, .downloadDestination:
             return request
         case .requestData(let data):
             request.httpBody = data
@@ -96,7 +96,7 @@ public extension Endpoint {
             return try request.encoded(encodable: encodable, encoder: encoder)
         case let .requestParameters(parameters, parameterEncoding):
             return try request.encoded(parameters: parameters, parameterEncoding: parameterEncoding)
-        case let .uploadCompositeMultipart(_, urlParameters):
+        case let .uploadCompositeMultipart(_, urlParameters), let .uploadCompositeMultipartFormData(_, urlParameters):
             let parameterEncoding = URLEncoding(destination: .queryString)
             return try request.encoded(parameters: urlParameters, parameterEncoding: parameterEncoding)
         case let .downloadParameters(parameters, parameterEncoding, _):
@@ -120,21 +120,46 @@ public extension Endpoint {
 /// Required for using `Endpoint` as a key type in a `Dictionary`.
 extension Endpoint: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
-        guard let request = try? urlRequest() else {
-            hasher.combine(url)
-            return
+        switch task {
+        case let .uploadFile(file):
+            hasher.combine(file)
+        case let .uploadMultipart(multipartData), let .uploadCompositeMultipart(multipartData, _):
+            hasher.combine(multipartData)
+        case let .uploadMultipartFormData(multipartFormData), let .uploadCompositeMultipartFormData(multipartFormData, _):
+            hasher.combine(multipartFormData)
+        default:
+            break
         }
-        hasher.combine(request)
+
+        if let request = try? urlRequest() {
+            hasher.combine(request)
+        } else {
+            hasher.combine(url)
+        }
     }
 
     /// Note: If both Endpoints fail to produce a URLRequest the comparison will
     /// fall back to comparing each Endpoint's hashValue.
     public static func == (lhs: Endpoint, rhs: Endpoint) -> Bool {
+        let areEndpointsEqualInAdditionalProperties: Bool = {
+            switch (lhs.task, rhs.task) {
+            case (let .uploadFile(file1), let .uploadFile(file2)):
+                return file1 == file2
+            case (let .uploadMultipart(multipartData1), let .uploadMultipart(multipartData2)),
+                 (let .uploadCompositeMultipart(multipartData1, _), let .uploadCompositeMultipart(multipartData2, _)):
+                return multipartData1 == multipartData2
+            case (let .uploadMultipartFormData(multipartFormData1), let .uploadMultipartFormData(multipartFormData2)),
+                 (let .uploadCompositeMultipartFormData(multipartFormData1, _), let .uploadCompositeMultipartFormData(multipartFormData2, _)):
+                return multipartFormData1 == multipartFormData2
+            default:
+                return true
+            }
+        }()
         let lhsRequest = try? lhs.urlRequest()
         let rhsRequest = try? rhs.urlRequest()
         if lhsRequest != nil, rhsRequest == nil { return false }
         if lhsRequest == nil, rhsRequest != nil { return false }
-        if lhsRequest == nil, rhsRequest == nil { return lhs.hashValue == rhs.hashValue }
-        return (lhsRequest == rhsRequest)
+        if lhsRequest == nil, rhsRequest == nil { return lhs.hashValue == rhs.hashValue && areEndpointsEqualInAdditionalProperties }
+        return lhsRequest == rhsRequest && areEndpointsEqualInAdditionalProperties
     }
 }

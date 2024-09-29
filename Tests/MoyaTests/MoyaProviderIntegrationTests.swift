@@ -11,7 +11,7 @@ import OHHTTPStubsSwift
 @testable import ReactiveMoya
 
 func beIdenticalToResponse(_ expectedValue: Moya.Response) -> Predicate<Moya.Response> {
-    return Predicate { expression in
+    Predicate { expression in
         let test: Bool
         if let value = try expression.evaluate(), value == expectedValue {
             test = true
@@ -119,18 +119,19 @@ final class MoyaProviderIntegrationTests: QuickSpec {
                     }
 
                     it("uses a background queue") {
-                        var isMainThread: Bool?
+
+                        let callbackQueueLabel = Atomic<String?>(wrappedValue: nil)
                         let callbackQueue = DispatchQueue(label: "background_queue", attributes: .concurrent)
                         let target: GitHub = .zen
 
                         waitUntil { done in
                             provider.request(target, callbackQueue: callbackQueue) { _ in
-                                isMainThread = Thread.isMainThread
+                                callbackQueueLabel.wrappedValue = DispatchQueue.currentLabel
                                 done()
                             }
                         }
 
-                        expect(isMainThread) == false
+                        expect(callbackQueueLabel.wrappedValue) == "background_queue"
                     }
 
                     it("uses the main queue") {
@@ -359,11 +360,32 @@ final class MoyaProviderIntegrationTests: QuickSpec {
             let formData = HTTPBin.createTestMultipartFormData()
 
             it("returns an error for status code different than 287") {
-                let target = HTTPBin.validatedUploadMultipart(formData, nil, [287])
+                let target = HTTPBin.validatedUploadMultipartFormData(MultipartFormData(parts: formData), nil, [287])
                 var receievedResponse: Response?
                 var receivedError: Error?
 
-                waitUntil(timeout: 10.0) { done in
+                waitUntil(timeout: .seconds(10)) { done in
+                    provider.request(target) { result in
+                        switch result {
+                        case .success(let response):
+                            receievedResponse = response
+                        case .failure(let error):
+                            receivedError = error
+                        }
+                        done()
+                    }
+                }
+
+                expect(receievedResponse).to(beNil())
+                expect(receivedError).toNot(beNil())
+            }
+
+            it("returns an error for status code different than 287") {
+                let target = HTTPBin.validatedUploadMultipartBodyParts(formData, nil, [287])
+                var receievedResponse: Response?
+                var receivedError: Error?
+
+                waitUntil(timeout: .seconds(10)) { done in
                     provider.request(target) { result in
                         switch result {
                         case .success(let response):
@@ -381,11 +403,33 @@ final class MoyaProviderIntegrationTests: QuickSpec {
 
             it("returns a valid response for .succesCodes") {
                 let successCodes = ValidationType.successCodes.statusCodes
-                let target = HTTPBin.validatedUploadMultipart(formData, nil, successCodes)
+                let target = HTTPBin.validatedUploadMultipartFormData(MultipartFormData(parts: formData), nil, successCodes)
                 var receievedResponse: Response?
                 var receivedError: Error?
 
-                waitUntil(timeout: 10.0) { done in
+                waitUntil(timeout: .seconds(10)) { done in
+                    provider.request(target) { result in
+                        switch result {
+                        case .success(let response):
+                            receievedResponse = response
+                        case .failure(let error):
+                            receivedError = error
+                        }
+                        done()
+                    }
+                }
+
+                expect(receievedResponse).toNot(beNil())
+                expect(receivedError).to(beNil())
+            }
+
+            it("returns a valid response for .succesCodes") {
+                let successCodes = ValidationType.successCodes.statusCodes
+                let target = HTTPBin.validatedUploadMultipartBodyParts(formData, nil, successCodes)
+                var receievedResponse: Response?
+                var receivedError: Error?
+
+                waitUntil(timeout: .seconds(10)) { done in
                     provider.request(target) { result in
                         switch result {
                         case .success(let response):
